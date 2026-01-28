@@ -1,0 +1,14 @@
+{
+  "name": "neon-feline-frontier",
+  "version": "1.0.0",
+  "description": "Multiplayer Neon Cat Game with Socket.io",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "node-fetch": "^2.6.7",
+    "socket.io": "^4.7.2"
+  }
+}
