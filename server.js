@@ -12,15 +12,58 @@ const PORT = process.env.PORT || 3000;
 // Serve static files (your index.html)
 app.use(express.static(path.join(__dirname, 'public')));
 
-// In-memory player storage
-let players = {};
+// In-memory player storage - keyed by session token
+let players = {}; // token → { id, x, y, color, skinType, name, direction }
 
-// Game state
+// Game state - all keyed by session token
 let projectiles = {};
 let fish = {};
-let stunned = {}; // { playerId: { until: timestamp, immuneUntil: timestamp } }
-let playerCooldowns = {};
-let scores = {}; // { playerId: fishCount }
+let stunned = {}; // token → { until: timestamp, immuneUntil: timestamp }
+let playerCooldowns = {}; // token → timestamp
+let scores = {}; // token → fishCount
+
+// Session persistence storage
+let sessions = {}; // token → { name, color, skinType, createdAt }
+let socketToSession = {}; // socketId → token (maps current socket to session)
+
+// Cat generation constants
+const CAT_NAMES = [
+  'Meow-tron',
+  'Cyber-Whiskers',
+  'Pixel-Paw',
+  'Bit-Kitten',
+  'Neon-Tabby',
+  'Glitch-Cat',
+  'Data-Pounce',
+  'Synth-Claw',
+  'Logic-Tail',
+  'Laser-Mew',
+  'Matrix-Mog',
+  'Aero-Fluff',
+];
+
+const NEON_COLORS = ['#ff0055', '#00ff99', '#00ccff', '#cc00ff', '#ffcc00'];
+
+// Cat generation helpers
+function generateSessionToken() {
+  return 'sess-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+}
+
+function createNewCat() {
+  return {
+    name: CAT_NAMES[Math.floor(Math.random() * CAT_NAMES.length)] + '-' + Math.floor(Math.random() * 99),
+    color: NEON_COLORS[Math.floor(Math.random() * NEON_COLORS.length)],
+    skinType: Math.floor(Math.random() * 3),
+    createdAt: Date.now(),
+  };
+}
+
+function getRandomSpawnPosition() {
+  return {
+    x: Math.random() * WORLD_SIZE,
+    y: Math.random() * WORLD_SIZE,
+  };
+}
 
 // Constants
 const WORLD_SIZE = 50000;
@@ -30,45 +73,138 @@ const PROJECTILE_COOLDOWN = 500;
 const STUN_DURATION = 3000;
 const STUN_IMMUNITY = 5000;
 const HIT_RADIUS = 30;
-const FISH_SPAWN_INTERVAL = 1000;
-const FISH_MAX_COUNT = 1000;
+const FISH_SPAWN_INTERVAL = 2000; // Spawn fish every 2 seconds (was 1s)
+const FISH_MAX_COUNT = 50; // Reduced from 1000 to 50 for performance
 const FISH_COLLECTION_RADIUS = 50;
 
 io.on('connection', (socket) => {
-  console.log(`User connected: ${socket.id}`);
+  console.log(`Socket connected: ${socket.id}`);
 
   // Send current state to newly connected player
   socket.emit('players-list', players);
+  socket.emit('fish-sync', Object.values(fish)); // Full fish list only on connect
+
+  // Handle session request (new connection flow for persistent cats)
+  socket.on('request-session', (data) => {
+    let token = data?.token;
+    let session;
+    let isReturning = false;
+
+    // Check if valid existing session
+    if (token && sessions[token]) {
+      session = sessions[token];
+      isReturning = true;
+      console.log(`Returning player: ${session.name} (token: ${token})`);
+
+      // Map this socket to the existing session
+      socketToSession[socket.id] = token;
+
+      // If player entry doesn't exist (was cleaned up), recreate with persisted position or new spawn
+      if (!players[token]) {
+        // Player was removed, create new spawn position
+        const spawn = getRandomSpawnPosition();
+        players[token] = {
+          id: token,
+          x: spawn.x,
+          y: spawn.y,
+          color: session.color,
+          skinType: session.skinType,
+          name: session.name,
+          direction: 1,
+        };
+      }
+      // Player entry exists - keep their position (persist across refresh)
+    } else {
+      // Create new session
+      token = generateSessionToken();
+      session = createNewCat();
+      sessions[token] = session;
+      scores[token] = 0;
+      console.log(`New player created: ${session.name} (token: ${token})`);
+
+      // Map this socket to the session
+      socketToSession[socket.id] = token;
+
+      // Generate spawn position
+      const spawn = getRandomSpawnPosition();
+
+      // Initialize player in players object
+      players[token] = {
+        id: token,
+        x: spawn.x,
+        y: spawn.y,
+        color: session.color,
+        skinType: session.skinType,
+        name: session.name,
+        direction: 1,
+      };
+    }
+
+    // Send session data to client
+    socket.emit('session-established', {
+      token: token,
+      player: {
+        id: token,
+        x: players[token].x,
+        y: players[token].y,
+        color: session.color,
+        skinType: session.skinType,
+        name: session.name,
+        direction: players[token].direction || 1,
+      },
+      score: scores[token] || 0,
+      isReturning: isReturning,
+    });
+
+    // Broadcast updated player list to all clients
+    io.emit('players-list', players);
+  });
 
   // Handle Player Join/Update
   socket.on('player-update', (data) => {
+    if (!data || !data.token) return;
+
+    const token = data.token;
+
+    // Verify this socket owns this token
+    if (socketToSession[socket.id] !== token) {
+      console.log(`Token mismatch: socket ${socket.id} tried to update token ${token}`);
+      return;
+    }
+
     // Check if player is stunned
     const now = Date.now();
-    if (stunned[socket.id] && stunned[socket.id].until > now) {
+    if (stunned[token] && stunned[token].until > now) {
       // Reject position update, keep other properties
-      players[socket.id] = {
-        ...players[socket.id],
-        id: socket.id,
+      players[token] = {
+        ...players[token],
+        id: token,
         direction: data.direction,
         skinType: data.skinType,
         name: data.name,
         color: data.color,
       };
     } else {
-      // Normal update
-      players[socket.id] = { ...data, id: socket.id };
+      // Normal update - merge with existing data
+      players[token] = {
+        ...players[token],
+        id: token,
+        x: data.x,
+        y: data.y,
+        color: data.color,
+        direction: data.direction,
+        skinType: data.skinType,
+        name: data.name,
+      };
     }
-    // Use io.emit so EVERYONE (including the sender) gets the updated list
-    io.emit('players-list', players);
+    // Don't broadcast here - let the game loop handle it to reduce traffic
   });
 
   // Handle incoming chat messages
-  // The client sends 'chat-message' or 'send-chat'
   socket.on('chat-message', (msg) => {
     console.log(`Message from ${msg.name}: ${msg.text}`);
 
     // Broadcast to everyone except the sender
-    // (Since the client adds the message locally immediately)
     socket.broadcast.emit('chat-message', {
       senderId: msg.senderId,
       name: msg.name,
@@ -91,23 +227,27 @@ io.on('connection', (socket) => {
 
   // Handle yarn firing
   socket.on('fire-yarn', (data) => {
-    const player = players[socket.id];
+    // Get token from socket mapping
+    const token = socketToSession[socket.id];
+    if (!token) return;
+
+    const player = players[token];
     if (!player) return;
 
     // Check if stunned
     const now = Date.now();
-    if (stunned[socket.id] && stunned[socket.id].until > now) {
+    if (stunned[token] && stunned[token].until > now) {
       return;
     }
 
     // Check cooldown
-    const lastShot = playerCooldowns[socket.id] || 0;
+    const lastShot = playerCooldowns[token] || 0;
     if (now - lastShot < PROJECTILE_COOLDOWN) {
       return;
     }
 
     // Create projectile
-    const projectileId = `proj-${socket.id}-${now}`;
+    const projectileId = `proj-${token}-${now}`;
     const { directionX, directionY } = data;
 
     // Normalize direction
@@ -120,22 +260,38 @@ io.on('connection', (socket) => {
       y: player.y,
       vx: (directionX / mag) * PROJECTILE_SPEED,
       vy: (directionY / mag) * PROJECTILE_SPEED,
-      ownerId: socket.id,
+      ownerId: token, // Use token as owner ID
       createdAt: now,
     };
 
-    playerCooldowns[socket.id] = now;
+    playerCooldowns[token] = now;
     io.emit('projectiles-update', Object.values(projectiles));
   });
 
   // Handle Disconnect
   socket.on('disconnect', () => {
-    console.log(`User disconnected: ${socket.id}`);
-    delete players[socket.id];
-    delete stunned[socket.id];
-    delete playerCooldowns[socket.id];
-    delete scores[socket.id];
-    io.emit('player-removed', socket.id);
+    const token = socketToSession[socket.id];
+    console.log(`Socket disconnected: ${socket.id} (token: ${token})`);
+
+    if (token) {
+      // Remove socket-to-session mapping
+      delete socketToSession[socket.id];
+
+      // DON'T delete the player - keep them in the game for reconnection
+      // Their position persists until server restart
+      // Only broadcast player-removed if no other socket controls this token
+      // (This handles multiple tabs scenario)
+
+      // Check if any other socket is using this token
+      const tokenStillActive = Object.values(socketToSession).includes(token);
+      if (!tokenStillActive) {
+        // No active socket for this player, but keep their data for reconnection
+        // Optionally: you could set a timeout to remove inactive players after X minutes
+        console.log(`Player ${token} has no active connections but data preserved`);
+      }
+    }
+
+    // Don't broadcast player-removed - player persists for reconnection
   });
 });
 
@@ -163,28 +319,28 @@ setInterval(() => {
       continue;
     }
 
-    // Check collision with players
-    for (let playerId in players) {
-      if (playerId === proj.ownerId) continue;
+    // Check collision with players (players keyed by token)
+    for (let token in players) {
+      if (token === proj.ownerId) continue;
 
       // Check immunity
-      if (stunned[playerId] && stunned[playerId].immuneUntil > now) {
+      if (stunned[token] && stunned[token].immuneUntil > now) {
         continue;
       }
 
-      const player = players[playerId];
+      const player = players[token];
       const dx = proj.x - player.x;
       const dy = proj.y - player.y;
       const distance = Math.sqrt(dx * dx + dy * dy);
 
       if (distance < HIT_RADIUS) {
         // HIT!
-        stunned[playerId] = {
+        stunned[token] = {
           until: now + STUN_DURATION,
           immuneUntil: now + STUN_DURATION + STUN_IMMUNITY,
         };
         io.emit('player-stunned', {
-          playerId,
+          playerId: token, // Send token as playerId for client to match
           until: now + STUN_DURATION,
           immuneUntil: now + STUN_DURATION + STUN_IMMUNITY,
         });
@@ -197,27 +353,33 @@ setInterval(() => {
   // Check fish collection
   for (let fishId in fish) {
     const f = fish[fishId];
-    for (let playerId in players) {
-      const player = players[playerId];
+    for (let token in players) {
+      const player = players[token];
       const dx = f.x - player.x;
       const dy = f.y - player.y;
       const distance = Math.sqrt(dx * dx + dy * dy);
 
       if (distance < FISH_COLLECTION_RADIUS) {
-        // Collect fish
-        scores[playerId] = (scores[playerId] || 0) + 1;
-        io.emit('fish-collected', { fishId, playerId, newScore: scores[playerId] });
+        // Collect fish - scores keyed by token
+        scores[token] = (scores[token] || 0) + 1;
+
+        io.emit('fish-collected', {
+          fishId,
+          playerId: token,
+          newScore: scores[token],
+          allScores: scores, // Include all scores for leaderboard update
+        });
         delete fish[fishId];
         break;
       }
     }
   }
 
-  // Broadcast state
+  // Broadcast state (batched for efficiency)
+  io.emit('players-list', players);
   io.emit('projectiles-update', Object.values(projectiles));
-  // io.emit('fish-update', Object.values(fish));
-  io.emit('scores-update', scores);
-}, 20); // 40 ticks per second
+  // Note: scores are sent via fish-collected event, not every tick
+}, 100); // 10 ticks per second for better performance
 
 // Fish spawning
 setInterval(() => {
@@ -225,13 +387,15 @@ setInterval(() => {
 
   if (currentFishCount < FISH_MAX_COUNT) {
     const fishId = `fish-${Date.now()}-${Math.random()}`;
-    fish[fishId] = {
+    const newFish = {
       id: fishId,
       x: Math.random() * WORLD_SIZE,
       y: Math.random() * WORLD_SIZE,
       spawned: Date.now(),
     };
-    io.emit('fish-update', Object.values(fish));
+    fish[fishId] = newFish;
+    // Only send the new fish, not all fish
+    io.emit('fish-spawned', newFish);
   }
 }, FISH_SPAWN_INTERVAL);
 

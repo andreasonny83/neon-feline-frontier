@@ -317,22 +317,6 @@
 
       const WORLD_SIZE = 50000;
       const PLAYER_SPEED = 6;
-
-      const CAT_NAMES = [
-        'Meow-tron',
-        'Cyber-Whiskers',
-        'Pixel-Paw',
-        'Bit-Kitten',
-        'Neon-Tabby',
-        'Glitch-Cat',
-        'Data-Pounce',
-        'Synth-Claw',
-        'Logic-Tail',
-        'Laser-Mew',
-        'Matrix-Mog',
-        'Aero-Fluff',
-      ];
-
       let players = {};
       let keys = {};
       let camera = { x: 0, y: 0 };
@@ -344,29 +328,88 @@
       let lastMovementDirection = { x: 1, y: 0 }; // Track last movement for yarn aiming
       const FIRE_COOLDOWN = 500;
 
-      const localPlayer = {
-        x: Math.random() * WORLD_SIZE,
-        y: Math.random() * WORLD_SIZE,
-        color: getRandomNeonColor(),
+      // Placeholder - will be populated by server via session-established
+      let localPlayer = {
+        id: null, // Session token, set by server
+        x: 0,
+        y: 0,
+        color: '#ffffff',
         direction: 1,
-        skinType: Math.floor(Math.random() * 3),
-        name: CAT_NAMES[Math.floor(Math.random() * CAT_NAMES.length)] + '-' + Math.floor(Math.random() * 99),
+        skinType: 0,
+        name: 'Loading...',
+        initialized: false,
       };
+
+      // Session persistence helpers
+      const SESSION_STORAGE_KEY = 'neon-feline-session-token';
+
+      function getStoredSessionToken() {
+        try {
+          return localStorage.getItem(SESSION_STORAGE_KEY);
+        } catch (e) {
+          console.warn('localStorage not available');
+          return null;
+        }
+      }
+
+      function storeSessionToken(token) {
+        try {
+          localStorage.setItem(SESSION_STORAGE_KEY, token);
+        } catch (e) {
+          console.warn('localStorage not available');
+        }
+      }
 
       let joystickActive = false;
       let joystickData = { x: 0, y: 0 };
 
       if (socket) {
         socket.on('connect', () => {
+          document.getElementById('conn-status').innerText = 'CONNECTING...';
+          document.getElementById('conn-status').className = 'text-yellow-400';
+
+          // Request session with stored token (or null for new player)
+          const storedToken = getStoredSessionToken();
+          socket.emit('request-session', { token: storedToken });
+        });
+
+        // Handle session established from server
+        socket.on('session-established', (data) => {
+          // Store token for future sessions
+          storeSessionToken(data.token);
+
+          // Remove ourselves from players if we were added as a ghost
+          // (This happens when players-list arrives before session-established)
+          delete players[data.token];
+
+          // Update local player with server-assigned data
+          localPlayer.id = data.token; // Store token as player ID
+          localPlayer.x = data.player.x;
+          localPlayer.y = data.player.y;
+          localPlayer.color = data.player.color;
+          localPlayer.skinType = data.player.skinType;
+          localPlayer.name = data.player.name;
+          localPlayer.direction = data.player.direction;
+          localPlayer.initialized = true;
+
+          // Update UI
           document.getElementById('conn-status').innerText = 'CONNECTED';
           document.getElementById('conn-status').className = 'text-green-400';
-          // addChatMessage('SYSTEM', 'Uplink established.', '#00ff99');
+
+          if (data.isReturning) {
+            addChatMessage('GRID', `Welcome back, ${localPlayer.name}! Your score: ${data.score}`, '#00f3ff');
+          } else {
+            addChatMessage('GRID', `Welcome to the Frontier, ${localPlayer.name}`, '#00f3ff');
+          }
+
+          // Start sending updates now that we have valid data
           sendUpdate();
         });
 
         socket.on('disconnect', () => {
           document.getElementById('conn-status').innerText = 'DISCONNECTED';
           document.getElementById('conn-status').className = 'text-red-500';
+          localPlayer.initialized = false;
           // addChatMessage('SYSTEM', 'Uplink severed.', '#ff0055');
         });
 
@@ -376,12 +419,17 @@
         });
 
         socket.on('players-list', (data) => {
+          // Remove players no longer in the list
           for (let id in players) {
             if (!data[id]) delete players[id];
           }
 
           for (let id in data) {
-            if (id === socket.id) continue;
+            // Skip our own player - we trust local position to avoid rubber-banding
+            // (Our position is authoritative locally, server just broadcasts it to others)
+            if (id === localPlayer.id) {
+              continue;
+            }
 
             if (!players[id]) {
               players[id] = {
@@ -410,14 +458,22 @@
           projectiles = data;
         });
 
-        socket.on('fish-update', (data) => {
+        // Full fish sync on connect
+        socket.on('fish-sync', (data) => {
           fish = data;
-          // addChatMessage('SYSTEM', `new fish ${data}`, '#00ff99');
-          console.log(data);
         });
 
-        socket.on('scores-update', (data) => {
-          scores = data;
+        // Individual fish spawned (incremental update)
+        socket.on('fish-spawned', (newFish) => {
+          fish.push(newFish);
+        });
+
+        // Fish collected - remove from local array and update scores
+        socket.on('fish-collected', (data) => {
+          fish = fish.filter((f) => f.id !== data.fishId);
+          if (data.allScores) {
+            scores = data.allScores;
+          }
         });
 
         socket.on('player-stunned', (data) => {
@@ -439,8 +495,9 @@
       }
 
       function sendUpdate() {
-        if (socket && socket.connected) {
+        if (socket && socket.connected && localPlayer.initialized && localPlayer.id) {
           socket.emit('player-update', {
+            token: localPlayer.id, // Include token for server to identify player
             x: Math.round(localPlayer.x),
             y: Math.round(localPlayer.y),
             color: localPlayer.color,
@@ -469,13 +526,17 @@
       }
 
       function fireYarn() {
+        if (!localPlayer.initialized) {
+          return;
+        }
+
         const now = Date.now();
 
         if (now - lastFireTime < FIRE_COOLDOWN) {
           return;
         }
 
-        if (stunned[socket?.id] && stunned[socket.id].until > now) {
+        if (stunned[localPlayer.id] && stunned[localPlayer.id].until > now) {
           return;
         }
 
@@ -534,9 +595,6 @@
 
         // Regular state sync
         setInterval(sendUpdate, 100);
-
-        // Welcome message
-        addChatMessage('GRID', 'Welcome to the Frontier, ' + localPlayer.name, '#00f3ff');
       }
 
       function loop() {
@@ -578,11 +636,11 @@
         }
 
         // Add local player if not already in list
-        if (socket?.id && !playerScores.find((p) => p.id === socket.id)) {
+        if (localPlayer.id && !playerScores.find((p) => p.id === localPlayer.id)) {
           playerScores.push({
-            id: socket.id,
+            id: localPlayer.id,
             name: localPlayer.name,
-            score: scores[socket.id] || 0,
+            score: scores[localPlayer.id] || 0,
             color: localPlayer.color,
           });
         }
@@ -594,7 +652,7 @@
         let html = '';
         playerScores.forEach((player, index) => {
           const rank = index + 1;
-          const isLocalPlayer = player.id === socket?.id;
+          const isLocalPlayer = player.id === localPlayer.id;
           const highlightClass = isLocalPlayer ? 'highlight' : '';
 
           html += `
@@ -614,9 +672,10 @@
           dy = 0;
 
         const now = Date.now();
-        const isStunned = stunned[socket?.id] && stunned[socket.id].until > now;
+        const isStunned = stunned[localPlayer.id] && stunned[localPlayer.id].until > now;
 
-        if (!isStunned) {
+        // Only process local player movement if initialized
+        if (localPlayer.initialized && !isStunned) {
           if (keys['ArrowUp'] || keys['KeyW']) dy -= 1;
           if (keys['ArrowDown'] || keys['KeyS']) dy += 1;
           if (keys['ArrowLeft'] || keys['KeyA']) dx -= 1;
@@ -687,8 +746,10 @@
           }
         }
 
-        // Draw local player
-        drawCat(localPlayer, stunned[socket?.id]);
+        // Draw local player (only if initialized)
+        if (localPlayer.initialized) {
+          drawCat(localPlayer, stunned[localPlayer.id]);
+        }
 
         // Draw projectiles
         for (let proj of projectiles) {
@@ -699,8 +760,6 @@
       }
 
       function drawProjectile(proj) {
-        console.log(proj);
-
         ctx.save();
         ctx.translate(proj.x, proj.y);
 
@@ -787,10 +846,13 @@
           mctx.fill();
         }
 
-        mctx.fillStyle = '#ffffff';
-        mctx.beginPath();
-        mctx.arc(localPlayer.x * scale, localPlayer.y * scale, 3, 0, Math.PI * 2);
-        mctx.fill();
+        // Draw local player on minimap (only if initialized)
+        if (localPlayer.initialized) {
+          mctx.fillStyle = '#ffffff';
+          mctx.beginPath();
+          mctx.arc(localPlayer.x * scale, localPlayer.y * scale, 3, 0, Math.PI * 2);
+          mctx.fill();
+        }
       }
 
       function drawCat(p, stunnedState) {
@@ -923,7 +985,10 @@
           const limited = Math.min(dist, 50);
           const angle = Math.atan2(dy, dx);
           handle.style.transform = `translate(-50%, -50%) translate(${Math.cos(angle) * limited}px, ${Math.sin(angle) * limited}px)`;
-          joystickData = { x: (Math.cos(angle) * limited) / 50, y: (Math.sin(angle) * limited) / 50 };
+          joystickData = {
+            x: (Math.cos(angle) * limited) / 50,
+            y: (Math.sin(angle) * limited) / 50,
+          };
         }
       }
 
