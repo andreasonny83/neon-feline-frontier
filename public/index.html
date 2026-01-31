@@ -318,21 +318,7 @@
       const WORLD_SIZE = 50000;
       const PLAYER_SPEED = 6;
 
-      const CAT_NAMES = [
-        'Meow-tron',
-        'Cyber-Whiskers',
-        'Pixel-Paw',
-        'Bit-Kitten',
-        'Neon-Tabby',
-        'Glitch-Cat',
-        'Data-Pounce',
-        'Synth-Claw',
-        'Logic-Tail',
-        'Laser-Mew',
-        'Matrix-Mog',
-        'Aero-Fluff',
-      ];
-
+      let localPlayer = {};
       let players = {};
       let keys = {};
       let camera = { x: 0, y: 0 };
@@ -344,15 +330,6 @@
       let lastMovementDirection = { x: 1, y: 0 }; // Track last movement for yarn aiming
       const FIRE_COOLDOWN = 500;
 
-      const localPlayer = {
-        x: Math.random() * WORLD_SIZE,
-        y: Math.random() * WORLD_SIZE,
-        color: getRandomNeonColor(),
-        direction: 1,
-        skinType: Math.floor(Math.random() * 3),
-        name: CAT_NAMES[Math.floor(Math.random() * CAT_NAMES.length)] + '-' + Math.floor(Math.random() * 99),
-      };
-
       let joystickActive = false;
       let joystickData = { x: 0, y: 0 };
 
@@ -360,14 +337,23 @@
         socket.on('connect', () => {
           document.getElementById('conn-status').innerText = 'CONNECTED';
           document.getElementById('conn-status').className = 'text-green-400';
-          // addChatMessage('SYSTEM', 'Uplink established.', '#00ff99');
+          addChatMessage('SYSTEM', 'Uplink established.', '#00ff99');
           sendUpdate();
         });
 
         socket.on('disconnect', () => {
           document.getElementById('conn-status').innerText = 'DISCONNECTED';
           document.getElementById('conn-status').className = 'text-red-500';
-          // addChatMessage('SYSTEM', 'Uplink severed.', '#ff0055');
+          addChatMessage('SYSTEM', 'Uplink severed.', '#ff0055');
+        });
+
+        socket.on('player-update', (data) => {
+          localPlayer.x = data.x;
+          localPlayer.y = data.y;
+          localPlayer.color = data.color;
+          localPlayer.direction = data.direction;
+          localPlayer.skinType = data.skinType;
+          localPlayer.name = data.name;
         });
 
         // Handle incoming chat messages
@@ -412,8 +398,6 @@
 
         socket.on('fish-update', (data) => {
           fish = data;
-          // addChatMessage('SYSTEM', `new fish ${data}`, '#00ff99');
-          console.log(data);
         });
 
         socket.on('scores-update', (data) => {
@@ -426,16 +410,16 @@
             immuneUntil: data.immuneUntil,
           };
 
-          // if (data.playerId === socket.id) {
-          //   addChatMessage('SYSTEM', "⚡ You've been stunned!", '#ff0055');
-          // }
+          if (data.playerId === socket.id) {
+            addChatMessage('SYSTEM', "⚡ You've been stunned!", '#ff0055');
+          }
         });
 
-        // socket.on('fish-collected', (data) => {
-        //   if (data.playerId === socket.id) {
-        //     addChatMessage('SYSTEM', `🐟 Fish collected! Score: ${data.newScore}`, '#00ff99');
-        //   }
-        // });
+        socket.on('fish-collected', (data) => {
+          if (data.playerId === socket.id) {
+            addChatMessage('SYSTEM', `🐟 Fish collected! Score: ${data.newScore}`, '#00ff99');
+          }
+        });
       }
 
       function sendUpdate() {
@@ -443,10 +427,10 @@
           socket.emit('player-update', {
             x: Math.round(localPlayer.x),
             y: Math.round(localPlayer.y),
-            color: localPlayer.color,
+            // color: localPlayer.color,
             direction: localPlayer.direction,
-            skinType: localPlayer.skinType,
-            name: localPlayer.name,
+            // skinType: localPlayer.skinType,
+            // name: localPlayer.name,
           });
         }
       }
@@ -464,7 +448,7 @@
           addChatMessage(localPlayer.name, text, localPlayer.color);
           input.value = '';
         } else if (!socket || !socket.connected) {
-          // addChatMessage('SYSTEM', 'Cannot send: Offline.', '#ff0055');
+          addChatMessage('SYSTEM', 'Cannot send: Offline.', '#ff0055');
         }
       }
 
@@ -699,8 +683,6 @@
       }
 
       function drawProjectile(proj) {
-        console.log(proj);
-
         ctx.save();
         ctx.translate(proj.x, proj.y);
 
@@ -866,7 +848,13 @@
         ctx.stroke();
 
         // Eyes
-        ctx.fillStyle = '#fff';
+        if (p.name === 'Penny-Lane') {
+          console.log(p.name);
+          ctx.fillStyle = '#8edc41'; // Green eyes for special cat
+        } else {
+          ctx.fillStyle = '#fff';
+        }
+
         ctx.beginPath();
         ctx.arc(6, -4, 2, 0, Math.PI * 2);
         ctx.arc(-2, -4, 2, 0, Math.PI * 2);
@@ -882,9 +870,6 @@
         minimapCanvas.height = 300;
       }
 
-      function getRandomNeonColor() {
-        return ['#ff0055', '#00ff99', '#00ccff', '#cc00ff', '#ffcc00'][Math.floor(Math.random() * 5)];
-      }
       function updatePlayerCount() {
         const count = 1 + Object.keys(players).length;
         document.getElementById('player-count').innerText = count;

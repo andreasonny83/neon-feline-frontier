@@ -21,6 +21,7 @@ let fish = {};
 let stunned = {}; // { playerId: { until: timestamp, immuneUntil: timestamp } }
 let playerCooldowns = {};
 let scores = {}; // { playerId: fishCount }
+let doesPennyExist = false;
 
 // Constants
 const WORLD_SIZE = 50000;
@@ -46,14 +47,25 @@ io.on('connection', (socket) => {
     const now = Date.now();
     if (stunned[socket.id] && stunned[socket.id].until > now) {
       // Reject position update, keep other properties
-      players[socket.id] = {
-        ...players[socket.id],
-        id: socket.id,
-        direction: data.direction,
-        skinType: data.skinType,
-        name: data.name,
-        color: data.color,
-      };
+      // players[socket.id] = {
+      //   ...players[socket.id],
+      //   id: socket.id,
+      //   direction: data.direction,
+      //   skinType: data.skinType,
+      //   name: data.name,
+      //   color: data.color,
+      // };
+    } else if (!players[socket.id]) {
+      // New player
+      const newPlayer = createPlayer(socket.id, doesPennyExist);
+      console.log('new player');
+
+      players[socket.id] = newPlayer;
+      console.log(players);
+      if (newPlayer.name === 'Penny-Lane') {
+        doesPennyExist = true;
+      }
+      io.emit('player-update', players[socket.id]);
     } else {
       // Normal update
       players[socket.id] = { ...data, id: socket.id };
@@ -234,6 +246,42 @@ setInterval(() => {
     io.emit('fish-update', Object.values(fish));
   }
 }, FISH_SPAWN_INTERVAL);
+
+function getRandomNeonColor() {
+  const colors = ['#ff0055', '#00ff99', '#00ccff', '#cc00ff', '#ffcc00', '#333'];
+  return colors[Math.floor(Math.random() * colors.length)];
+}
+
+const createPlayer = (socketId, withoutPenny = false) => {
+  const CAT_NAMES = [
+    'Meow-tron',
+    'Cyber-Whiskers',
+    'Pixel-Paw',
+    'Bit-Kitten',
+    'Neon-Tabby',
+    'Glitch-Cat',
+    'Data-Pounce',
+    'Synth-Claw',
+    'Logic-Tail',
+    'Laser-Mew',
+    'Matrix-Mog',
+    'Aero-Fluff',
+    'Penny-Lane',
+  ];
+
+  const name = withoutPenny
+    ? CAT_NAMES[Math.floor(Math.random() * CAT_NAMES.length - 1)]
+    : CAT_NAMES[Math.floor(Math.random() * CAT_NAMES.length)];
+  return {
+    id: socketId,
+    x: Math.random() * WORLD_SIZE,
+    y: Math.random() * WORLD_SIZE,
+    color: name === 'Penny-Lane' ? '#333' : getRandomNeonColor(),
+    direction: 1,
+    skinType: name === 'Penny-Lane' ? 1 : Math.floor(Math.random() * 3),
+    name: name === 'Penny-Lane' ? 'Penny-Lane' : name + '-' + Math.floor(Math.random() * 99),
+  };
+};
 
 server.listen(PORT, () => {
   console.log(`Neon Feline Server running on http://localhost:${PORT}`);
