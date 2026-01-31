@@ -1,7 +1,7 @@
-const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
-const path = require('path');
+const express = require("express");
+const http = require("http");
+const { Server } = require("socket.io");
+const path = require("path");
 
 const app = express();
 const server = http.createServer(app);
@@ -10,7 +10,7 @@ const io = new Server(server);
 const PORT = process.env.PORT || 3000;
 
 // Serve static files (your index.html)
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, "public")));
 
 // In-memory player storage
 let players = {};
@@ -32,17 +32,17 @@ const STUN_DURATION = 3000;
 const STUN_IMMUNITY = 5000;
 const HIT_RADIUS = 30;
 const FISH_SPAWN_INTERVAL = 1000;
-const FISH_MAX_COUNT = 1000;
+const FISH_MAX_COUNT = 500;
 const FISH_COLLECTION_RADIUS = 50;
 
-io.on('connection', (socket) => {
+io.on("connection", (socket) => {
   console.log(`User connected: ${socket.id}`);
 
   // Send current state to newly connected player
-  socket.emit('players-list', players);
+  socket.emit("players-list", players);
 
   // Handle Player Join/Update
-  socket.on('player-update', (data) => {
+  socket.on("player-update", (data) => {
     // Check if player is stunned
     const now = Date.now();
     if (stunned[socket.id] && stunned[socket.id].until > now) {
@@ -58,30 +58,27 @@ io.on('connection', (socket) => {
     } else if (!players[socket.id]) {
       // New player
       const newPlayer = createPlayer(socket.id, doesPennyExist);
-      console.log('new player');
-
       players[socket.id] = newPlayer;
-      console.log(players);
-      if (newPlayer.name === 'Penny-Lane') {
+      if (newPlayer.name === "Penny-Lane") {
         doesPennyExist = true;
       }
-      io.emit('player-update', players[socket.id]);
+      io.emit("player-update", players[socket.id]);
     } else {
       // Normal update
-      players[socket.id] = { ...data, id: socket.id };
+      players[socket.id] = { ...players[socket.id], ...data, id: socket.id };
     }
     // Use io.emit so EVERYONE (including the sender) gets the updated list
-    io.emit('players-list', players);
+    io.emit("players-list", players);
   });
 
   // Handle incoming chat messages
   // The client sends 'chat-message' or 'send-chat'
-  socket.on('chat-message', (msg) => {
+  socket.on("chat-message", (msg) => {
     console.log(`Message from ${msg.name}: ${msg.text}`);
 
     // Broadcast to everyone except the sender
     // (Since the client adds the message locally immediately)
-    socket.broadcast.emit('chat-message', {
+    socket.broadcast.emit("chat-message", {
       senderId: msg.senderId,
       name: msg.name,
       text: msg.text,
@@ -91,8 +88,8 @@ io.on('connection', (socket) => {
   });
 
   // Fallback for the secondary event name emitted by the client
-  socket.on('send-chat', (msg) => {
-    socket.broadcast.emit('chat-message', {
+  socket.on("send-chat", (msg) => {
+    socket.broadcast.emit("chat-message", {
       senderId: msg.senderId,
       name: msg.name,
       text: msg.text,
@@ -102,7 +99,7 @@ io.on('connection', (socket) => {
   });
 
   // Handle yarn firing
-  socket.on('fire-yarn', (data) => {
+  socket.on("fire-yarn", (data) => {
     const player = players[socket.id];
     if (!player) return;
 
@@ -137,17 +134,17 @@ io.on('connection', (socket) => {
     };
 
     playerCooldowns[socket.id] = now;
-    io.emit('projectiles-update', Object.values(projectiles));
+    io.emit("projectiles-update", Object.values(projectiles));
   });
 
   // Handle Disconnect
-  socket.on('disconnect', () => {
+  socket.on("disconnect", () => {
     console.log(`User disconnected: ${socket.id}`);
     delete players[socket.id];
     delete stunned[socket.id];
     delete playerCooldowns[socket.id];
     delete scores[socket.id];
-    io.emit('player-removed', socket.id);
+    io.emit("player-removed", socket.id);
   });
 });
 
@@ -195,7 +192,7 @@ setInterval(() => {
           until: now + STUN_DURATION,
           immuneUntil: now + STUN_DURATION + STUN_IMMUNITY,
         };
-        io.emit('player-stunned', {
+        io.emit("player-stunned", {
           playerId,
           until: now + STUN_DURATION,
           immuneUntil: now + STUN_DURATION + STUN_IMMUNITY,
@@ -218,7 +215,11 @@ setInterval(() => {
       if (distance < FISH_COLLECTION_RADIUS) {
         // Collect fish
         scores[playerId] = (scores[playerId] || 0) + 1;
-        io.emit('fish-collected', { fishId, playerId, newScore: scores[playerId] });
+        io.emit("fish-collected", {
+          fishId,
+          playerId,
+          newScore: scores[playerId],
+        });
         delete fish[fishId];
         break;
       }
@@ -226,9 +227,9 @@ setInterval(() => {
   }
 
   // Broadcast state
-  io.emit('projectiles-update', Object.values(projectiles));
+  io.emit("projectiles-update", Object.values(projectiles));
   // io.emit('fish-update', Object.values(fish));
-  io.emit('scores-update', scores);
+  io.emit("scores-update", scores);
 }, 20); // 40 ticks per second
 
 // Fish spawning
@@ -243,30 +244,37 @@ setInterval(() => {
       y: Math.random() * WORLD_SIZE,
       spawned: Date.now(),
     };
-    io.emit('fish-update', Object.values(fish));
+    io.emit("fish-update", Object.values(fish));
   }
 }, FISH_SPAWN_INTERVAL);
 
 function getRandomNeonColor() {
-  const colors = ['#ff0055', '#00ff99', '#00ccff', '#cc00ff', '#ffcc00', '#333'];
+  const colors = [
+    "#ff0055",
+    "#00ff99",
+    "#00ccff",
+    "#cc00ff",
+    "#ffcc00",
+    "#333",
+  ];
   return colors[Math.floor(Math.random() * colors.length)];
 }
 
 const createPlayer = (socketId, withoutPenny = false) => {
   const CAT_NAMES = [
-    'Meow-tron',
-    'Cyber-Whiskers',
-    'Pixel-Paw',
-    'Bit-Kitten',
-    'Neon-Tabby',
-    'Glitch-Cat',
-    'Data-Pounce',
-    'Synth-Claw',
-    'Logic-Tail',
-    'Laser-Mew',
-    'Matrix-Mog',
-    'Aero-Fluff',
-    'Penny-Lane',
+    "Meow-tron",
+    "Cyber-Whiskers",
+    "Pixel-Paw",
+    "Bit-Kitten",
+    "Neon-Tabby",
+    "Glitch-Cat",
+    "Data-Pounce",
+    "Synth-Claw",
+    "Logic-Tail",
+    "Laser-Mew",
+    "Matrix-Mog",
+    "Aero-Fluff",
+    "Penny-Lane",
   ];
 
   const name = withoutPenny
@@ -276,10 +284,13 @@ const createPlayer = (socketId, withoutPenny = false) => {
     id: socketId,
     x: Math.random() * WORLD_SIZE,
     y: Math.random() * WORLD_SIZE,
-    color: name === 'Penny-Lane' ? '#333' : getRandomNeonColor(),
+    color: name === "Penny-Lane" ? "#333" : getRandomNeonColor(),
     direction: 1,
-    skinType: name === 'Penny-Lane' ? 1 : Math.floor(Math.random() * 3),
-    name: name === 'Penny-Lane' ? 'Penny-Lane' : name + '-' + Math.floor(Math.random() * 99),
+    skinType: name === "Penny-Lane" ? 1 : Math.floor(Math.random() * 3),
+    name:
+      name === "Penny-Lane"
+        ? "Penny-Lane"
+        : name + "-" + Math.floor(Math.random() * 99),
   };
 };
 
