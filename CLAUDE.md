@@ -4,72 +4,103 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Neon Feline Frontier is a multiplayer browser-based game where players control neon-colored cats in a shared 4000x4000 pixel world. Built with Node.js, Express, Socket.io for real-time multiplayer, and HTML5 Canvas for rendering.
+Neon Feline Frontier is a multiplayer browser-based game where players control neon-colored cats in a shared 5000x5000 pixel world. Built with Node.js, Express, Socket.io for real-time multiplayer, TypeScript for type safety, and Vite for client bundling.
 
 ## Commands
 
 - `npm install` - Install dependencies
-- `npm start` - Run the server (default port: 3000)
-- `node server.js` - Alternative way to start the server
-- Set `PORT` environment variable to change server port
+- `npm run dev` - Run both server and client in development mode (with HMR)
+- `npm run dev:server` - Run only the server with hot reload (tsx watch)
+- `npm run dev:client` - Run only the Vite dev server
+- `npm run build` - Build both client and server for production
+- `npm start` - Run production server
+- `npx tsc --noEmit` - Type check without emitting
 
 ## Architecture
 
-### Server ([server.js](server.js))
+### Shared Types ([src/shared/types.ts](src/shared/types.ts))
 
-Express server with Socket.io handling real-time multiplayer communication:
+Contains all TypeScript interfaces and constants shared between client and server:
+- `Player`, `RemotePlayer`, `Projectile`, `Fish`, `StunState` interfaces
+- Socket event payload types
+- Game constants (WORLD_SIZE, PLAYER_SPEED, etc.)
 
-- **In-memory state**: Players stored in `players` object, keyed by socket.id
-- **Static file serving**: Serves [public/index.html](public/index.html) as the game client
-- **Gemini API proxy**: Handles `gemini-query` events to proxy requests to Gemini API (requires API key at line 12)
+### Server ([src/server/index.ts](src/server/index.ts))
+
+Express server with typed Socket.io handling real-time multiplayer:
+
+- **In-memory state**: Players, projectiles, fish, stunned states, scores
+- **Static file serving**: Serves Vite build output or public folder
 - **Socket events**:
   - `connection` - New player connects, receives current players list
   - `player-update` - Player position/state update, broadcasts to all clients
   - `chat-message` / `send-chat` - Chat messages, broadcast to all except sender
-  - `disconnect` - Player removed from state, broadcasts removal
+  - `fire-yarn` - Creates projectiles with cooldown checking
+  - `disconnect` - Player removed from state
+- **Game loop**: 40 ticks/sec for physics, collisions, fish collection
+- **Fish spawning**: Every 2 seconds up to 500 fish
 
-### Client ([public/index.html](public/index.html))
+### Client Modules ([src/client/](src/client/))
 
-Single-file HTML/CSS/JavaScript client with embedded game logic:
+Modular TypeScript client with Vite bundling:
 
-- **Game loop**: RequestAnimationFrame-based update/draw cycle
-- **World**: 4000x4000 pixel grid with camera following local player
-- **Local player**: Managed client-side with WASD/Arrow controls (or touch joystick on mobile)
-- **Remote players**: Interpolated smoothly toward target positions (15% lerp)
-- **State sync**: Local player broadcasts position every 100ms via `player-update`
-- **Rendering**: Canvas 2D context with:
-  - Grid background (100px squares)
-  - Cat sprites with 3 skin types (circle/square/triangle)
-  - Player names displayed above cats
-  - Minimap (150x150px) showing all players
-- **Chat system**: Real-time text chat with color-coded player names
-- **Mobile support**: Virtual joystick for touch devices (shown via media query)
+- **[main.ts](src/client/main.ts)** - Entry point, initialization, game loop
+- **[state.ts](src/client/state.ts)** - Game state, canvas references, constants
+- **[network.ts](src/client/network.ts)** - Socket.io connection and event handlers
+- **[game.ts](src/client/game.ts)** - Update loop, player movement, camera
+- **[renderer.ts](src/client/renderer.ts)** - Canvas drawing (cats, fish, projectiles, minimap)
+- **[input.ts](src/client/input.ts)** - Keyboard and touch joystick handlers
+- **[ui.ts](src/client/ui.ts)** - Chat, scoreboard, stats display
 
-### Key Implementation Details
+### HTML Template ([index.html](index.html))
 
-- **Player synchronization**: Server is authoritative for player list but position updates are optimistic (client-side prediction with server broadcast)
-- **Camera system**: Centers on local player, translates canvas context by `-camera.x, -camera.y`
-- **Player interpolation**: Remote players lerp toward target positions to smooth network jitter
-- **No persistence**: All game state is in-memory and lost on server restart
-- **No physics/collision**: Players can overlap freely
-- **API key required**: Gemini integration requires key in [server.js:12](server.js#L12)
+Clean HTML without inline JavaScript:
+- UI elements (chat, scoreboard, stats, minimap)
+- Tailwind CSS via CDN
+- Vite module script entry point
+
+## Development Workflow
+
+In development mode (`npm run dev`):
+1. Vite dev server runs on port 5173 with HMR
+2. Express server runs on port 3000
+3. Vite proxies `/socket.io` requests to Express
+4. Access game at `http://localhost:5173`
+
+For production:
+1. `npm run build` compiles TypeScript and bundles client
+2. `npm start` serves built client from `dist/client`
 
 ## File Structure
 
 ```
 /
-├── server.js              # Main server with Socket.io
-├── server copy.js         # Earlier version (simpler, no Gemini API)
-├── public/
-│   └── index.html         # Complete client: HTML + CSS + game logic
-├── package.json           # Dependencies: express, socket.io, node-fetch
-└── node_modules/          # Dependencies
+├── src/
+│   ├── client/           # Client TypeScript modules
+│   │   ├── main.ts       # Entry point
+│   │   ├── state.ts      # Game state
+│   │   ├── network.ts    # Socket.io client
+│   │   ├── game.ts       # Game loop
+│   │   ├── renderer.ts   # Canvas rendering
+│   │   ├── input.ts      # Input handling
+│   │   └── ui.ts         # UI updates
+│   ├── server/
+│   │   └── index.ts      # Express + Socket.io server
+│   └── shared/
+│       └── types.ts      # Shared TypeScript types
+├── public/               # Static assets
+├── index.html            # Vite entry HTML
+├── package.json
+├── tsconfig.json         # Base TypeScript config
+├── tsconfig.server.json  # Server TypeScript config
+└── vite.config.ts        # Vite configuration
 ```
 
-## Development Notes
+## Key Implementation Details
 
-- No TypeScript, test framework, or linter configured
-- All client code is in a single HTML file with inline styles and scripts
-- Socket.io client script loaded from CDN path `/socket.io/socket.io.js` (auto-served by Socket.io server)
-- Tailwind CSS loaded via CDN for UI styling
-- World bounds enforced client-side with `Math.max/min` clamping
+- **Type-safe Socket.io**: Uses generic Socket.io types for event payloads
+- **Player synchronization**: Server authoritative for player list, position updates optimistic
+- **Camera system**: Centers on local player, translates canvas context
+- **Player interpolation**: Remote players lerp toward target positions (15%)
+- **No persistence**: All game state is in-memory
+- **No physics/collision**: Players can overlap freely
