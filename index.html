@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Neon Feline Frontier - Local Host</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+        background-color: #0f0a1e;
+        color: white;
+        font-family: "Courier New", Courier, monospace;
+        touch-action: none;
+      }
+      #gameCanvas {
+        display: block;
+        position: absolute;
+        top: 0;
+        left: 0;
+        z-index: 1;
+      }
+      #ui-layer {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        pointer-events: none;
+        z-index: 50; /* High z-index to stay above canvas */
+      }
+      .retro-panel {
+        background: rgba(15, 10, 30, 0.9);
+        border: 2px solid #ff00de;
+        padding: 12px;
+        box-shadow:
+          0 0 15px #ff00de,
+          inset 0 0 10px rgba(255, 0, 222, 0.3);
+        backdrop-filter: blur(8px);
+      }
+      .retro-text {
+        text-shadow: 2px 2px #ff00de;
+        font-weight: bold;
+        letter-spacing: 2px;
+      }
+      .retro-btn {
+        background: rgba(0, 243, 255, 0.1);
+        border: 1px solid #00f3ff;
+        color: #00f3ff;
+        padding: 6px 12px;
+        cursor: pointer;
+        font-family: inherit;
+        font-weight: bold;
+        text-transform: uppercase;
+        transition: all 0.2s;
+        text-shadow: 0 0 5px #00f3ff;
+      }
+      .retro-btn:hover {
+        background: #00f3ff;
+        color: #000;
+        box-shadow: 0 0 15px #00f3ff;
+      }
+      .retro-input {
+        background: rgba(0, 0, 0, 0.7);
+        border: 1px solid #ff00de;
+        color: white;
+        padding: 8px;
+        width: 100%;
+        font-family: inherit;
+        outline: none;
+      }
+      .retro-input:focus {
+        border-color: #00f3ff;
+        box-shadow: 0 0 5px #00f3ff;
+      }
+      /* Custom scrollbar for webkit */
+      #scoreboard-list::-webkit-scrollbar {
+        width: 4px;
+      }
+      #scoreboard-list::-webkit-scrollbar-thumb {
+        background: #ff00de;
+      }
+      .scoreboard-entry {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 4px 6px;
+        margin-bottom: 4px;
+        background: rgba(0, 0, 0, 0.3);
+        border-left: 2px solid rgba(0, 243, 255, 0.3);
+        font-size: 11px;
+      }
+      .scoreboard-entry.highlight {
+        background: rgba(0, 243, 255, 0.2);
+        border-left-color: #00f3ff;
+        box-shadow: 0 0 8px rgba(0, 243, 255, 0.4);
+      }
+      .scoreboard-rank {
+        color: #ffcc00;
+        font-weight: bold;
+        margin-right: 6px;
+        min-width: 20px;
+      }
+      .scoreboard-name {
+        flex: 1;
+        color: #00ff99;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .scoreboard-score {
+        color: #ff00de;
+        font-weight: bold;
+        margin-left: 8px;
+      }
+
+      #mobile-controls {
+        display: none;
+        position: absolute;
+        bottom: 40px;
+        left: 40px;
+        width: 150px;
+        height: 150px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 50%;
+        touch-action: none;
+        pointer-events: auto;
+        z-index: 60;
+      }
+      #joystick {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 50px;
+        height: 50px;
+        background: rgba(0, 243, 255, 0.5);
+        border-radius: 50%;
+        transform: translate(-50%, -50%);
+        pointer-events: none;
+      }
+      #minimap-container {
+        position: absolute;
+        bottom: 20px;
+        right: 20px;
+        width: 150px;
+        height: 150px;
+        border: 2px solid #00f3ff;
+        background: rgba(15, 10, 30, 0.8);
+        box-shadow: 0 0 10px #00f3ff;
+        pointer-events: none;
+        z-index: 60;
+        /* display: none; */
+      }
+      #minimapCanvas {
+        width: 100%;
+        height: 100%;
+      }
+      @media (max-width: 768px) {
+        #mobile-controls {
+          display: block;
+        }
+        #minimap-container {
+          bottom: 10px;
+          right: 10px;
+          width: 100px;
+          height: 100px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="ui-layer">
+      <h1 class="text-2xl retro-text text-cyan-400">NEON FELINE FRONTIER</h1>
+      <p class="text-sm text-pink-400">WASD to Move | SPACE to Fire</p>
+      <p class="text-xs text-gray-400 mt-2">
+        Socket Status: <span id="conn-status" class="text-red-500">OFFLINE</span>
+      </p>
+      <p class="text-xs text-gray-400">Cats in Grid: <span id="player-count">1</span></p>
+    </div>
+
+    <div id="stats-container" style="position: absolute; bottom: 20px; left: 20px; pointer-events: auto; z-index: 100">
+      <div class="retro-panel" style="padding: 8px; min-width: 200px">
+        <h3 class="text-cyan-400 text-xs mb-2 font-bold tracking-widest">STATS</h3>
+        <p class="text-xs text-gray-400">Your Score: <span id="your-score" class="text-pink-400">0</span></p>
+        <div
+          id="cooldown-bar"
+          style="
+            margin-top: 8px;
+            height: 16px;
+            background: rgba(255, 0, 222, 0.2);
+            border: 1px solid #ff00de;
+            position: relative;
+          "
+        >
+          <div id="cooldown-fill" style="height: 100%; background: #ff00de; width: 0%; transition: width 0.1s"></div>
+          <span
+            style="
+              position: absolute;
+              top: 0;
+              left: 50%;
+              transform: translateX(-50%);
+              color: white;
+              font-size: 10px;
+              line-height: 16px;
+            "
+            >YARN</span
+          >
+        </div>
+      </div>
+    </div>
+
+    <div
+      id="scoreboard-container"
+      style="position: absolute; top: 20px; right: 20px; pointer-events: auto; z-index: 100; max-width: 250px"
+    >
+      <div class="retro-panel" style="padding: 8px">
+        <h3 class="text-cyan-400 text-xs mb-2 font-bold tracking-widest">LEADERBOARD</h3>
+        <div
+          id="scoreboard-list"
+          style="max-height: 200px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #ff00de transparent"
+        >
+          <!-- Scoreboard entries will be inserted here -->
+        </div>
+      </div>
+    </div>
+
+    <div id="mobile-controls"><div id="joystick"></div></div>
+
+    <div id="minimap-container">
+      <canvas id="minimapCanvas"></canvas>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <script type="module" src="/src/client/main.ts"></script>
+  </body>
+</html>

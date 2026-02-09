@@ -1,47 +1,66 @@
-const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
-const path = require('path');
+import express from "express";
+import { createServer } from "http";
+import { Server } from "socket.io";
+import path from "path";
+import { fileURLToPath } from "url";
+
+import type {
+  Player,
+  Projectile,
+  Fish,
+  StunState,
+  PlayerUpdateData,
+  FireYarnData,
+  ServerToClientEvents,
+  ClientToServerEvents,
+  InterServerEvents,
+  SocketData,
+} from "../shared/types.js";
+
+import {
+  WORLD_SIZE,
+  PROJECTILE_SPEED,
+  PROJECTILE_LIFETIME,
+  PROJECTILE_COOLDOWN,
+  STUN_DURATION,
+  STUN_IMMUNITY,
+  HIT_RADIUS,
+  FISH_SPAWN_INTERVAL,
+  FISH_MAX_COUNT,
+  FISH_COLLECTION_RADIUS,
+} from "../shared/types.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
-const server = http.createServer(app);
-const io = new Server(server);
+const server = createServer(app);
+const io = new Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>(server);
 
 const PORT = process.env.PORT || 3000;
 
-// Serve static files (your index.html)
-app.use(express.static(path.join(__dirname, 'public')));
+// Serve static files - built client in production, public/ as fallback
+app.use(express.static(path.join(__dirname, "../../dist/client")));
+app.use(express.static(path.join(__dirname, "../../public")));
 
 // In-memory player storage
-let players = {};
+const players: Record<string, Player> = {};
 
 // Game state
-let projectiles = {};
-let fish = {};
-let stunned = {}; // { playerId: { until: timestamp, immuneUntil: timestamp } }
-let playerCooldowns = {};
-let scores = {}; // { playerId: fishCount }
+const projectiles: Record<string, Projectile> = {};
+const fish: Record<string, Fish> = {};
+const stunned: Record<string, StunState> = {};
+const playerCooldowns: Record<string, number> = {};
+const scores: Record<string, number> = {};
 
-// Constants
-const WORLD_SIZE = 50000;
-const PROJECTILE_SPEED = 25;
-const PROJECTILE_LIFETIME = 2000;
-const PROJECTILE_COOLDOWN = 500;
-const STUN_DURATION = 3000;
-const STUN_IMMUNITY = 5000;
-const HIT_RADIUS = 30;
-const FISH_SPAWN_INTERVAL = 1000;
-const FISH_MAX_COUNT = 1000;
-const FISH_COLLECTION_RADIUS = 50;
-
-io.on('connection', (socket) => {
+io.on("connection", (socket) => {
   console.log(`User connected: ${socket.id}`);
 
   // Send current state to newly connected player
-  socket.emit('players-list', players);
+  socket.emit("players-list", players);
 
   // Handle Player Join/Update
-  socket.on('player-update', (data) => {
+  socket.on("player-update", (data: PlayerUpdateData) => {
     // Check if player is stunned
     const now = Date.now();
     if (stunned[socket.id] && stunned[socket.id].until > now) {
@@ -59,38 +78,11 @@ io.on('connection', (socket) => {
       players[socket.id] = { ...data, id: socket.id };
     }
     // Use io.emit so EVERYONE (including the sender) gets the updated list
-    io.emit('players-list', players);
-  });
-
-  // Handle incoming chat messages
-  // The client sends 'chat-message' or 'send-chat'
-  socket.on('chat-message', (msg) => {
-    console.log(`Message from ${msg.name}: ${msg.text}`);
-
-    // Broadcast to everyone except the sender
-    // (Since the client adds the message locally immediately)
-    socket.broadcast.emit('chat-message', {
-      senderId: msg.senderId,
-      name: msg.name,
-      text: msg.text,
-      color: msg.color,
-      timestamp: Date.now(),
-    });
-  });
-
-  // Fallback for the secondary event name emitted by the client
-  socket.on('send-chat', (msg) => {
-    socket.broadcast.emit('chat-message', {
-      senderId: msg.senderId,
-      name: msg.name,
-      text: msg.text,
-      color: msg.color,
-      timestamp: Date.now(),
-    });
+    io.emit("players-list", players);
   });
 
   // Handle yarn firing
-  socket.on('fire-yarn', (data) => {
+  socket.on("fire-yarn", (data: FireYarnData) => {
     const player = players[socket.id];
     if (!player) return;
 
@@ -125,17 +117,17 @@ io.on('connection', (socket) => {
     };
 
     playerCooldowns[socket.id] = now;
-    io.emit('projectiles-update', Object.values(projectiles));
+    io.emit("projectiles-update", Object.values(projectiles));
   });
 
   // Handle Disconnect
-  socket.on('disconnect', () => {
+  socket.on("disconnect", () => {
     console.log(`User disconnected: ${socket.id}`);
     delete players[socket.id];
     delete stunned[socket.id];
     delete playerCooldowns[socket.id];
     delete scores[socket.id];
-    io.emit('player-removed', socket.id);
+    io.emit("player-removed", socket.id);
   });
 });
 
@@ -144,7 +136,7 @@ setInterval(() => {
   const now = Date.now();
 
   // Update projectiles
-  for (let id in projectiles) {
+  for (const id in projectiles) {
     const proj = projectiles[id];
 
     // Move projectile
@@ -164,7 +156,7 @@ setInterval(() => {
     }
 
     // Check collision with players
-    for (let playerId in players) {
+    for (const playerId in players) {
       if (playerId === proj.ownerId) continue;
 
       // Check immunity
@@ -183,7 +175,7 @@ setInterval(() => {
           until: now + STUN_DURATION,
           immuneUntil: now + STUN_DURATION + STUN_IMMUNITY,
         };
-        io.emit('player-stunned', {
+        io.emit("player-stunned", {
           playerId,
           until: now + STUN_DURATION,
           immuneUntil: now + STUN_DURATION + STUN_IMMUNITY,
@@ -195,9 +187,9 @@ setInterval(() => {
   }
 
   // Check fish collection
-  for (let fishId in fish) {
+  for (const fishId in fish) {
     const f = fish[fishId];
-    for (let playerId in players) {
+    for (const playerId in players) {
       const player = players[playerId];
       const dx = f.x - player.x;
       const dy = f.y - player.y;
@@ -206,7 +198,7 @@ setInterval(() => {
       if (distance < FISH_COLLECTION_RADIUS) {
         // Collect fish
         scores[playerId] = (scores[playerId] || 0) + 1;
-        io.emit('fish-collected', { fishId, playerId, newScore: scores[playerId] });
+        io.emit("fish-collected", { fishId, playerId, newScore: scores[playerId] });
         delete fish[fishId];
         break;
       }
@@ -214,9 +206,9 @@ setInterval(() => {
   }
 
   // Broadcast state
-  io.emit('projectiles-update', Object.values(projectiles));
+  io.emit("projectiles-update", Object.values(projectiles));
   // io.emit('fish-update', Object.values(fish));
-  io.emit('scores-update', scores);
+  io.emit("scores-update", scores);
 }, 20); // 40 ticks per second
 
 // Fish spawning
@@ -231,7 +223,7 @@ setInterval(() => {
       y: Math.random() * WORLD_SIZE,
       spawned: Date.now(),
     };
-    io.emit('fish-update', Object.values(fish));
+    io.emit("fish-update", Object.values(fish));
   }
 }, FISH_SPAWN_INTERVAL);
 
