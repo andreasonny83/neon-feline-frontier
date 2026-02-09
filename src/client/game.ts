@@ -1,5 +1,5 @@
-import { WORLD_SIZE, PLAYER_SPEED } from "../shared/types";
-import { state, localPlayer, canvas } from "./state";
+import { WORLD_SIZE, PLAYER_SPEED, FISH_COLLECTION_RADIUS, PROJECTILE_LIFETIME } from "../shared/types";
+import { state, canvas } from "./state";
 import { socket } from "./network";
 
 export function update(): void {
@@ -29,15 +29,15 @@ export function update(): void {
         dx /= mag;
         dy /= mag;
       }
-      localPlayer.x = Math.max(0, Math.min(WORLD_SIZE, localPlayer.x + dx * PLAYER_SPEED));
-      localPlayer.y = Math.max(0, Math.min(WORLD_SIZE, localPlayer.y + dy * PLAYER_SPEED));
-      if (dx > 0) localPlayer.direction = 1;
-      if (dx < 0) localPlayer.direction = -1;
+      state.localPlayer.x = Math.max(0, Math.min(WORLD_SIZE, state.localPlayer.x + dx * PLAYER_SPEED));
+      state.localPlayer.y = Math.max(0, Math.min(WORLD_SIZE, state.localPlayer.y + dy * PLAYER_SPEED));
+      if (dx > 0) state.localPlayer.direction = 1;
+      if (dx < 0) state.localPlayer.direction = -1;
     }
   }
 
-  state.camera.x = localPlayer.x - canvas.width / 2;
-  state.camera.y = localPlayer.y - canvas.height / 2;
+  state.camera.x = state.localPlayer.x - canvas.width / 2;
+  state.camera.y = state.localPlayer.y - canvas.height / 2;
 
   // Interpolate remote players
   for (const id in state.players) {
@@ -45,6 +45,38 @@ export function update(): void {
     if (p.targetX !== undefined) {
       p.x += (p.targetX - p.x) * 0.15;
       p.y += (p.targetY - p.y) * 0.15;
+    }
+  }
+
+  // Simulate projectiles locally
+  for (let i = state.projectiles.length - 1; i >= 0; i--) {
+    const proj = state.projectiles[i];
+    proj.x += proj.vx;
+    proj.y += proj.vy;
+
+    // Remove if out of bounds or expired
+    if (
+      proj.x < 0 ||
+      proj.x > WORLD_SIZE ||
+      proj.y < 0 ||
+      proj.y > WORLD_SIZE ||
+      now - proj.createdAt > PROJECTILE_LIFETIME
+    ) {
+      state.projectiles.splice(i, 1);
+    }
+  }
+
+  // Check fish collection for local player only
+  if (socket && socket.connected) {
+    for (let i = state.fish.length - 1; i >= 0; i--) {
+      const f = state.fish[i];
+      const fdx = f.x - state.localPlayer.x;
+      const fdy = f.y - state.localPlayer.y;
+      const distance = Math.sqrt(fdx * fdx + fdy * fdy);
+      if (distance < FISH_COLLECTION_RADIUS) {
+        socket.emit("collect-fish", { fishId: f.id, playerX: state.localPlayer.x, playerY: state.localPlayer.y });
+        state.fish.splice(i, 1); // Optimistic removal -- fish disappears instantly
+      }
     }
   }
 }

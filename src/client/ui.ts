@@ -1,5 +1,5 @@
 import { FIRE_COOLDOWN } from "../shared/types";
-import { state, localPlayer } from "./state";
+import { state } from "./state";
 import { socket } from "./network";
 
 export function updatePlayerCount(): void {
@@ -32,7 +32,7 @@ export function updateScoreboard(): void {
       id: playerId,
       name: player.name || "Unknown",
       score: score,
-      color: player.color,
+      color: player.name.startsWith("Penny") ? "pink" : player.color,
     });
   }
 
@@ -41,9 +41,9 @@ export function updateScoreboard(): void {
   if (socketId && !playerScores.find((p) => p.id === socketId)) {
     playerScores.push({
       id: socketId,
-      name: localPlayer.name,
+      name: state.localPlayer.name,
       score: state.scores[socketId] || 0,
-      color: localPlayer.color,
+      color: state.localPlayer.name.startsWith("Penny") ? "pink" : state.localPlayer.color,
     });
   }
 

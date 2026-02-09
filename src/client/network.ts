@@ -1,10 +1,29 @@
 import { io, Socket } from "socket.io-client";
 import type { Player, ServerToClientEvents, ClientToServerEvents } from "../shared/types";
 import { FIRE_COOLDOWN } from "../shared/types";
-import { state, localPlayer } from "./state";
+import { state } from "./state";
 import { updatePlayerCount } from "./ui";
+import { updateStatsUI, updateScoreboard } from "./ui";
+import { update } from "./game";
+import { draw, drawMinimap } from "./renderer";
 
 export let socket: Socket<ServerToClientEvents, ClientToServerEvents> | null = null;
+
+function loop(): void {
+  update();
+  draw();
+  drawMinimap();
+  updateStatsUI();
+  updateScoreboard();
+  requestAnimationFrame(loop);
+}
+
+function startGame(): void {
+  requestAnimationFrame(loop);
+
+  // Regular state sync
+  setInterval(sendUpdate, 250);
+}
 
 export function initSocket(): void {
   try {
@@ -13,7 +32,26 @@ export function initSocket(): void {
     socket.on("connect", () => {
       document.getElementById("conn-status")!.innerText = "CONNECTED";
       document.getElementById("conn-status")!.className = "text-green-400";
-      sendUpdate();
+      sendConnect();
+    });
+
+    socket.on("connected", (data: Player) => {
+      const loadingElement = document.getElementById("loading");
+      if (data) {
+        state.localPlayer = data;
+        if (loadingElement) {
+          loadingElement.remove();
+        }
+        startGame();
+      } else {
+        if (loadingElement) {
+          loadingElement.innerHTML = `
+            <h3 class="text-red-500 text-sm mb-2 font-bold tracking-widest">Connection Failed</h3>
+            <p class="text-gray-300 text-xs">Please try refreshing the page.</p>
+          `;
+        }
+        console.error("Failed to receive player data on connect");
+      }
     });
 
     socket.on("disconnect", () => {
@@ -52,12 +90,20 @@ export function initSocket(): void {
       updatePlayerCount();
     });
 
-    socket.on("projectiles-update", (data) => {
-      state.projectiles = data;
+    socket.on("projectile-created", (proj) => {
+      state.projectiles.push(proj);
+    });
+
+    socket.on("projectile-removed", (id) => {
+      state.projectiles = state.projectiles.filter((p) => p.id !== id);
     });
 
     socket.on("fish-update", (data) => {
       state.fish = data;
+    });
+
+    socket.on("fish-collected", (data) => {
+      state.fish = state.fish.filter((f) => f.id !== data.fishId);
     });
 
     socket.on("scores-update", (data) => {
@@ -75,15 +121,18 @@ export function initSocket(): void {
   }
 }
 
+export function sendConnect(): void {
+  if (socket && socket.connected) {
+    socket.emit("player-connect");
+  }
+}
+
 export function sendUpdate(): void {
   if (socket && socket.connected) {
     socket.emit("player-update", {
-      x: Math.round(localPlayer.x),
-      y: Math.round(localPlayer.y),
-      color: localPlayer.color,
-      direction: localPlayer.direction,
-      skinType: localPlayer.skinType,
-      name: localPlayer.name,
+      x: state.localPlayer.x,
+      y: state.localPlayer.y,
+      direction: state.localPlayer.direction,
     });
   }
 }

@@ -15,6 +15,7 @@ import type {
   ClientToServerEvents,
   InterServerEvents,
   SocketData,
+  CollectFishData,
 } from "../shared/types.js";
 
 import {
@@ -29,6 +30,7 @@ import {
   FISH_MAX_COUNT,
   FISH_COLLECTION_RADIUS,
 } from "../shared/types.js";
+import { createPlayer } from "./player.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -53,11 +55,27 @@ const stunned: Record<string, StunState> = {};
 const playerCooldowns: Record<string, number> = {};
 const scores: Record<string, number> = {};
 
+let doesPennyExist = false;
+
 io.on("connection", (socket) => {
   console.log(`User connected: ${socket.id}`);
 
   // Send current state to newly connected player
   socket.emit("players-list", players);
+
+  socket.on("player-connect", () => {
+    if (players[socket.id]) {
+      socket.emit("connected", players[socket.id]);
+      return; // Player already exists, ignore
+    }
+    // Create new player
+    const localPlayer = createPlayer(socket.id, !doesPennyExist);
+    players[socket.id] = localPlayer;
+    if (players[socket.id].name.startsWith("Penny")) {
+      doesPennyExist = true;
+    }
+    socket.emit("connected", players[socket.id]);
+  });
 
   // Handle Player Join/Update
   socket.on("player-update", (data: PlayerUpdateData) => {
@@ -69,16 +87,29 @@ io.on("connection", (socket) => {
         ...players[socket.id],
         id: socket.id,
         direction: data.direction,
-        skinType: data.skinType,
-        name: data.name,
-        color: data.color,
       };
     } else {
       // Normal update
-      players[socket.id] = { ...data, id: socket.id };
+      players[socket.id] = { ...players[socket.id], ...data, id: socket.id };
     }
     // Use io.emit so EVERYONE (including the sender) gets the updated list
     io.emit("players-list", players);
+  });
+
+  // Handle fish collection (client-detected, server-validated)
+  socket.on("collect-fish", (data: CollectFishData) => {
+    const player = players[socket.id];
+    const f = fish[data.fishId];
+    if (!player || !f) return;
+
+    const dx = f.x - data.playerX;
+    const dy = f.y - data.playerY;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    if (distance < FISH_COLLECTION_RADIUS) {
+      scores[socket.id] = (scores[socket.id] || 0) + 1;
+      io.emit("fish-collected", { fishId: data.fishId, playerId: socket.id, newScore: scores[socket.id] });
+      delete fish[data.fishId];
+    }
   });
 
   // Handle yarn firing
@@ -117,12 +148,15 @@ io.on("connection", (socket) => {
     };
 
     playerCooldowns[socket.id] = now;
-    io.emit("projectiles-update", Object.values(projectiles));
+    io.emit("projectile-created", projectiles[projectileId]);
   });
 
   // Handle Disconnect
   socket.on("disconnect", () => {
     console.log(`User disconnected: ${socket.id}`);
+    if (players[socket.id] && players[socket.id].name.startsWith("Penny")) {
+      doesPennyExist = false;
+    }
     delete players[socket.id];
     delete stunned[socket.id];
     delete playerCooldowns[socket.id];
@@ -152,6 +186,7 @@ setInterval(() => {
       now - proj.createdAt > PROJECTILE_LIFETIME
     ) {
       delete projectiles[id];
+      io.emit("projectile-removed", id);
       continue;
     }
 
@@ -180,36 +215,16 @@ setInterval(() => {
           until: now + STUN_DURATION,
           immuneUntil: now + STUN_DURATION + STUN_IMMUNITY,
         });
+        io.emit("projectile-removed", id);
         delete projectiles[id];
         break;
       }
     }
   }
 
-  // Check fish collection
-  for (const fishId in fish) {
-    const f = fish[fishId];
-    for (const playerId in players) {
-      const player = players[playerId];
-      const dx = f.x - player.x;
-      const dy = f.y - player.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-
-      if (distance < FISH_COLLECTION_RADIUS) {
-        // Collect fish
-        scores[playerId] = (scores[playerId] || 0) + 1;
-        io.emit("fish-collected", { fishId, playerId, newScore: scores[playerId] });
-        delete fish[fishId];
-        break;
-      }
-    }
-  }
-
   // Broadcast state
-  io.emit("projectiles-update", Object.values(projectiles));
-  // io.emit('fish-update', Object.values(fish));
   io.emit("scores-update", scores);
-}, 20); // 40 ticks per second
+}, 30); // 10 ticks per second
 
 // Fish spawning
 setInterval(() => {
