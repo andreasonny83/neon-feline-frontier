@@ -2,74 +2,52 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Overview
-
-Neon Feline Frontier is a multiplayer browser-based game where players control neon-colored cats in a shared 4000x4000 pixel world. Built with Node.js, Express, Socket.io for real-time multiplayer, and HTML5 Canvas for rendering.
-
 ## Commands
 
-- `npm install` - Install dependencies
-- `npm start` - Run the server (default port: 3000)
-- `node server.js` - Alternative way to start the server
-- Set `PORT` environment variable to change server port
+- `npm run dev` — Start both Vite dev server (port 5173) and Express server (port 3000) with hot reload
+- `npm run dev:server` — Server only with tsx watch
+- `npm run dev:client` — Vite dev server only
+- `npm run build` — Production build (client via Vite → `dist/client/`, server via tsc → `dist/server/`)
+- `npm start` — Run production server from `dist/server/server/index.js`
+- `npm run preview` — Build + start production server
+- `PORT` env var changes Express server port (default 3000)
+
+In development, open `http://localhost:5173`. Vite proxies `/socket.io` WebSocket traffic to the Express server on port 3000. In production, Express serves the built client from `dist/client/`.
+
+No test framework, linter, or formatter is configured.
 
 ## Architecture
 
-### Server ([server.js](server.js))
+Multiplayer browser game — neon-colored cats in a shared 8000x8000 world. Node.js/Express/Socket.io backend, HTML5 Canvas frontend, all TypeScript with ESM modules.
 
-Express server with Socket.io handling real-time multiplayer communication:
+### Build Setup
 
-- **In-memory state**: Players stored in `players` object, keyed by socket.id
-- **Static file serving**: Serves [public/index.html](public/index.html) as the game client
-- **Gemini API proxy**: Handles `gemini-query` events to proxy requests to Gemini API (requires API key at line 12)
-- **Socket events**:
-  - `connection` - New player connects, receives current players list
-  - `player-update` - Player position/state update, broadcasts to all clients
-  - `chat-message` / `send-chat` - Chat messages, broadcast to all except sender
-  - `disconnect` - Player removed from state, broadcasts removal
+- **Client**: Vite bundles `src/client/` from root `index.html` entry point (`<script type="module" src="/src/client/main.ts">`)
+- **Server**: `tsc -p tsconfig.server.json` compiles `src/server/` and `src/shared/` to `dist/server/` with `rootDir: "src"`, producing `dist/server/server/index.js`
+- Server imports **must** use `.js` extensions (ESM requirement) — e.g., `import { createPlayer } from "./player.js"`
+- Client imports do **not** need `.js` extensions (Vite handles resolution)
 
-### Client ([public/index.html](public/index.html))
+### Server (`src/server/`)
 
-Single-file HTML/CSS/JavaScript client with embedded game logic:
+Express + Socket.io with all game state in-memory (lost on restart). Server is authoritative for player creation, fish collection validation, projectile collision/stun, and scoring.
 
-- **Game loop**: RequestAnimationFrame-based update/draw cycle
-- **World**: 4000x4000 pixel grid with camera following local player
-- **Local player**: Managed client-side with WASD/Arrow controls (or touch joystick on mobile)
-- **Remote players**: Interpolated smoothly toward target positions (15% lerp)
-- **State sync**: Local player broadcasts position every 100ms via `player-update`
-- **Rendering**: Canvas 2D context with:
-  - Grid background (100px squares)
-  - Cat sprites with 3 skin types (circle/square/triangle)
-  - Player names displayed above cats
-  - Minimap (150x150px) showing all players
-- **Chat system**: Real-time text chat with color-coded player names
-- **Mobile support**: Virtual joystick for touch devices (shown via media query)
+- `index.ts` — Socket event handlers, game loop (30ms tick for projectile physics + collision), fish spawning interval
+- `player.ts` — `createPlayer()` generates random cat names/colors; first connection gets special "Penny" character (skinType 4, dark color)
 
-### Key Implementation Details
+### Client (`src/client/`)
 
-- **Player synchronization**: Server is authoritative for player list but position updates are optimistic (client-side prediction with server broadcast)
-- **Camera system**: Centers on local player, translates canvas context by `-camera.x, -camera.y`
-- **Player interpolation**: Remote players lerp toward target positions to smooth network jitter
-- **No persistence**: All game state is in-memory and lost on server restart
-- **No physics/collision**: Players can overlap freely
-- **API key required**: Gemini integration requires key in [server.js:12](server.js#L12)
+- `main.ts` — Entry point: canvas init, socket connect, input setup
+- `state.ts` — Singleton game state object, canvas refs, resize handler
+- `network.ts` — Socket.io connection, all event handlers, game loop (`requestAnimationFrame`), `sendUpdate()` every 250ms
+- `game.ts` — `update()`: movement (WASD/joystick), world bounds clamping, remote player interpolation (15% lerp), client-side projectile simulation, optimistic fish collection
+- `renderer.ts` — `draw()`: grid, fish, cats (4 skin types + Penny), yarn projectiles with rotation/glow
+- `input.ts` — Keyboard (WASD/Space) and mobile touch joystick
+- `ui.ts` — Player count, score display, cooldown bar, ranked leaderboard
 
-## File Structure
+### Shared (`src/shared/types.ts`)
 
-```
-/
-├── server.js              # Main server with Socket.io
-├── server copy.js         # Earlier version (simpler, no Gemini API)
-├── public/
-│   └── index.html         # Complete client: HTML + CSS + game logic
-├── package.json           # Dependencies: express, socket.io, node-fetch
-└── node_modules/          # Dependencies
-```
+All game constants and TypeScript interfaces shared between client and server. Socket.io events are fully typed via `ServerToClientEvents`/`ClientToServerEvents` maps.
 
-## Development Notes
+### Client-Server Communication Pattern
 
-- No TypeScript, test framework, or linter configured
-- All client code is in a single HTML file with inline styles and scripts
-- Socket.io client script loaded from CDN path `/socket.io/socket.io.js` (auto-served by Socket.io server)
-- Tailwind CSS loaded via CDN for UI styling
-- World bounds enforced client-side with `Math.max/min` clamping
+Client-predicted movement with server broadcast. Fish collection is client-detected with server validation and optimistic local removal. Projectiles use creation/removal events (not position broadcasts) — client simulates physics locally between events.
