@@ -1,17 +1,17 @@
-import { WORLD_SIZE } from '../shared/types';
-import type { Projectile, Fish, StunState } from '../shared/types';
-import { state, localPlayer, canvas, ctx, minimapCanvas, mctx } from './state';
-import { socket } from './network';
+import { WORLD_SIZE } from "../shared/types";
+import type { Projectile, Fish, StunState } from "../shared/types";
+import { state, canvas, ctx, minimapCanvas, mctx } from "./state";
+import { socket } from "./network";
 
 export function draw(): void {
-  ctx.fillStyle = '#0f0a1e';
+  ctx.fillStyle = "#0f0a1e";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.save();
   ctx.translate(-state.camera.x, -state.camera.y);
 
   // Grid background
   ctx.beginPath();
-  ctx.strokeStyle = 'rgba(255, 0, 222, 0.1)';
+  ctx.strokeStyle = "rgba(255, 0, 222, 0.1)";
   for (let x = 0; x <= WORLD_SIZE; x += 100) {
     ctx.moveTo(x, 0);
     ctx.lineTo(x, WORLD_SIZE);
@@ -35,7 +35,7 @@ export function draw(): void {
   }
 
   // Draw local player
-  drawCat(localPlayer, state.stunned[socket?.id ?? '']);
+  drawCat(state.localPlayer, state.stunned[socket?.id ?? ""]);
 
   // Draw projectiles
   for (const proj of state.projectiles) {
@@ -46,8 +46,6 @@ export function draw(): void {
 }
 
 function drawProjectile(proj: Projectile): void {
-  console.log(proj);
-
   ctx.save();
   ctx.translate(proj.x, proj.y);
 
@@ -57,11 +55,11 @@ function drawProjectile(proj: Projectile): void {
 
   // Outer glow
   ctx.shadowBlur = 15;
-  ctx.shadowColor = '#ff00de';
+  ctx.shadowColor = "#ff00de";
 
   // Main yarn ball
-  ctx.fillStyle = '#ff00de';
-  ctx.strokeStyle = '#00f3ff';
+  ctx.fillStyle = "#ff00de";
+  ctx.strokeStyle = "#00f3ff";
   ctx.lineWidth = 2;
 
   ctx.beginPath();
@@ -70,7 +68,7 @@ function drawProjectile(proj: Projectile): void {
   ctx.stroke();
 
   // Yarn strands pattern (rotating)
-  ctx.strokeStyle = '#ffffff';
+  ctx.strokeStyle = "#ffffff";
   ctx.lineWidth = 1.5;
   for (let i = 0; i < 3; i++) {
     const angle = (i / 3) * Math.PI * 2;
@@ -80,7 +78,7 @@ function drawProjectile(proj: Projectile): void {
   }
 
   // Inner highlight
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+  ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
   ctx.beginPath();
   ctx.arc(-2, -2, 2, 0, Math.PI * 2);
   ctx.fill();
@@ -92,8 +90,8 @@ function drawFish(f: Fish): void {
   ctx.save();
   ctx.translate(f.x, f.y);
 
-  ctx.fillStyle = '#ffcc00';
-  ctx.strokeStyle = '#ff9900';
+  ctx.fillStyle = "#ffcc00";
+  ctx.strokeStyle = "#ff9900";
   ctx.lineWidth = 2;
 
   // Body
@@ -112,7 +110,7 @@ function drawFish(f: Fish): void {
   ctx.stroke();
 
   // Eye
-  ctx.fillStyle = '#000';
+  ctx.fillStyle = "#000";
   ctx.beginPath();
   ctx.arc(6, -2, 2, 0, Math.PI * 2);
   ctx.fill();
@@ -123,7 +121,7 @@ function drawFish(f: Fish): void {
 export function drawMinimap(): void {
   mctx.clearRect(0, 0, minimapCanvas.width, minimapCanvas.height);
   const scale = minimapCanvas.width / WORLD_SIZE;
-  mctx.strokeStyle = 'rgba(255, 0, 222, 0.2)';
+  mctx.strokeStyle = "rgba(255, 0, 222, 0.2)";
   mctx.strokeRect(0, 0, minimapCanvas.width, minimapCanvas.height);
 
   for (const id in state.players) {
@@ -134,9 +132,9 @@ export function drawMinimap(): void {
     mctx.fill();
   }
 
-  mctx.fillStyle = '#ffffff';
+  mctx.fillStyle = "#ffffff";
   mctx.beginPath();
-  mctx.arc(localPlayer.x * scale, localPlayer.y * scale, 3, 0, Math.PI * 2);
+  mctx.arc(state.localPlayer.x * scale, state.localPlayer.y * scale, 3, 0, Math.PI * 2);
   mctx.fill();
 }
 
@@ -165,16 +163,16 @@ function drawCat(p: DrawableCat, stunnedState: StunState | undefined): void {
   }
 
   // Label
-  ctx.fillStyle = '#fff';
+  ctx.fillStyle = "#fff";
   ctx.font = 'bold 12px "Courier New"';
-  ctx.textAlign = 'center';
-  ctx.fillText(p.name || '...', 0, -35);
+  ctx.textAlign = "center";
+  ctx.fillText(p.name || "...", 0, -35);
 
   // Stun indicator
   if (isStunned) {
-    ctx.fillStyle = '#ff0055';
+    ctx.fillStyle = "#ff0055";
     ctx.font = 'bold 14px "Courier New"';
-    ctx.fillText('STUNNED', 0, -50);
+    ctx.fillText("STUNNED", 0, -50);
 
     const alpha = 0.3 + Math.sin(now / 100) * 0.2;
     ctx.strokeStyle = `rgba(255, 0, 85, ${alpha})`;
@@ -200,7 +198,11 @@ function drawCat(p: DrawableCat, stunnedState: StunState | undefined): void {
   ctx.fill();
 
   // Body
-  if (p.skinType === 1) {
+  if (p.skinType === 0) {
+    ctx.beginPath();
+    ctx.arc(0, 0, 15, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (p.skinType === 1) {
     ctx.fillRect(-12, -12, 24, 24);
   } else if (p.skinType === 2) {
     ctx.beginPath();
@@ -209,10 +211,12 @@ function drawCat(p: DrawableCat, stunnedState: StunState | undefined): void {
     ctx.lineTo(-15, 10);
     ctx.closePath();
     ctx.fill();
-  } else {
+  } else if (p.skinType === 2) {
     ctx.beginPath();
     ctx.arc(0, 0, 15, 0, Math.PI * 2);
     ctx.fill();
+  } else if (p.skinType === 4) {
+    ctx.fillRect(-12, -12, 24, 24);
   }
 
   // Tail
@@ -222,7 +226,10 @@ function drawCat(p: DrawableCat, stunnedState: StunState | undefined): void {
   ctx.stroke();
 
   // Eyes
-  ctx.fillStyle = '#fff';
+  ctx.fillStyle = "#fff";
+  if (p.skinType === 4) {
+    ctx.fillStyle = "#578c1f";
+  }
   ctx.beginPath();
   ctx.arc(6, -4, 2, 0, Math.PI * 2);
   ctx.arc(-2, -4, 2, 0, Math.PI * 2);
