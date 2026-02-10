@@ -1,4 +1,5 @@
-import { Player, WORLD_SIZE } from "../shared/types";
+import type { Player } from "../shared/types.js";
+import { WORLD_SIZE } from "../shared/types.js";
 
 const CAT_NAMES = [
   "Meow-tron",

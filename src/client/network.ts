@@ -5,14 +5,13 @@ import { state } from "./state";
 import { updatePlayerCount } from "./ui";
 import { updateStatsUI, updateScoreboard } from "./ui";
 import { update } from "./game";
-import { draw, drawMinimap } from "./renderer";
+import { draw } from "./renderer";
 
 export let socket: Socket<ServerToClientEvents, ClientToServerEvents> | null = null;
 
 function loop(): void {
   update();
   draw();
-  drawMinimap();
   updateStatsUI();
   updateScoreboard();
   requestAnimationFrame(loop);

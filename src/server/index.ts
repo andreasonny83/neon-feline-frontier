@@ -2,7 +2,6 @@ import express from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import path from "path";
-import { fileURLToPath } from "url";
 
 import type {
   Player,
@@ -32,18 +31,14 @@ import {
 } from "../shared/types.js";
 import { createPlayer } from "./player.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
 const app = express();
 const server = createServer(app);
 const io = new Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>(server);
 
 const PORT = process.env.PORT || 3000;
 
-// Serve static files - built client in production, public/ as fallback
-app.use(express.static(path.join(__dirname, "../../dist/client")));
-app.use(express.static(path.join(__dirname, "../../public")));
+// Serve static files - built client in production
+app.use(express.static(path.join(process.cwd(), "dist/client")));
 
 // In-memory player storage
 const players: Record<string, Player> = {};

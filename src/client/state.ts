@@ -17,19 +17,14 @@ export const state = {
 
 export let canvas: HTMLCanvasElement;
 export let ctx: CanvasRenderingContext2D;
-export let minimapCanvas: HTMLCanvasElement;
 export let mctx: CanvasRenderingContext2D;
 
 export function initCanvas(): void {
   canvas = document.getElementById("gameCanvas") as HTMLCanvasElement;
   ctx = canvas.getContext("2d")!;
-  minimapCanvas = document.getElementById("minimapCanvas") as HTMLCanvasElement;
-  mctx = minimapCanvas.getContext("2d")!;
 }
 
 export function resize(): void {
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
-  minimapCanvas.width = 200;
-  minimapCanvas.height = 200;
 }

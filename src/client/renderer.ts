@@ -1,6 +1,6 @@
 import { WORLD_SIZE } from "../shared/types";
 import type { Projectile, Fish, StunState } from "../shared/types";
-import { state, canvas, ctx, minimapCanvas, mctx } from "./state";
+import { state, canvas, ctx } from "./state";
 import { socket } from "./network";
 
 export function draw(): void {
@@ -116,26 +116,6 @@ function drawFish(f: Fish): void {
   ctx.fill();
 
   ctx.restore();
-}
-
-export function drawMinimap(): void {
-  mctx.clearRect(0, 0, minimapCanvas.width, minimapCanvas.height);
-  const scale = minimapCanvas.width / WORLD_SIZE;
-  mctx.strokeStyle = "rgba(255, 0, 222, 0.2)";
-  mctx.strokeRect(0, 0, minimapCanvas.width, minimapCanvas.height);
-
-  for (const id in state.players) {
-    const p = state.players[id];
-    mctx.fillStyle = p.color;
-    mctx.beginPath();
-    mctx.arc(p.x * scale, p.y * scale, 2, 0, Math.PI * 2);
-    mctx.fill();
-  }
-
-  mctx.fillStyle = "#ffffff";
-  mctx.beginPath();
-  mctx.arc(state.localPlayer.x * scale, state.localPlayer.y * scale, 3, 0, Math.PI * 2);
-  mctx.fill();
 }
 
 interface DrawableCat {
