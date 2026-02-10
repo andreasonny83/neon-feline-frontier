@@ -10,8 +10,8 @@
     "build": "npm run build:client && npm run build:server",
     "build:client": "vite build",
     "build:server": "tsc -p tsconfig.server.json",
-    "start": "node dist/server/server/index.js",
-    "preview": "npm run build && node dist/server/server/index.js"
+    "start": "node dist/server/index.js",
+    "preview": "npm run build && node dist/server/index.js"
   },
   "dependencies": {
     "express": "^4.18.2",
