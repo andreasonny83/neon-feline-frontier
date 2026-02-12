@@ -116,8 +116,8 @@
       #mobile-controls {
         display: none;
         position: absolute;
-        bottom: 40px;
-        left: 40px;
+        bottom: 20px;
+        left: 20px;
         width: 150px;
         height: 150px;
         background: rgba(255, 255, 255, 0.1);
@@ -125,6 +125,29 @@
         touch-action: none;
         pointer-events: auto;
         z-index: 60;
+      }
+      #mobile-fire-btn {
+        display: none;
+        position: absolute;
+        bottom: 20px;
+        right: 20px;
+        width: 100px;
+        height: 80px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 5%;
+        touch-action: none;
+        pointer-events: auto;
+        text-align: center;
+        line-height: 80px;
+        font-size: 18px;
+        color: #d26d6d;
+        font-weight: bold;
+        user-select: none;
+        z-index: 60;
+      }
+      #mobile-fire-btn:active {
+        background: rgba(218, 73, 73, 0.36);
+        box-shadow: 0 0 10px rgba(218, 73, 73, 0.5);
       }
       #joystick {
         position: absolute;
@@ -140,6 +163,11 @@
       @media (max-width: 768px) {
         #mobile-controls {
           display: block;
+        }
+        #mobile-fire-btn {
+          display: block;
+          right: 20px;
+          left: auto;
         }
         #stats-container {
           display: none;
@@ -213,6 +241,9 @@
       <!-- This will be removed once the game loads -->
       <h3 class="text-cyan-400 text-xs mb-2 font-bold tracking-widest">Loading...</h3>
     </div>
+
+    <div id="mobile-controls"><div id="joystick"></div></div>
+    <div id="mobile-fire-btn"><button type="button">FIRE</button></div>
 
     <canvas id="gameCanvas"></canvas>
 

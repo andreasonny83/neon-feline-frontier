@@ -10,6 +10,11 @@ export function setupKeyboard(): void {
     }
   });
 
+  const fireBtn = document.getElementById("mobile-fire-btn")!;
+  fireBtn.addEventListener("click", () => {
+    fireYarn();
+  });
+
   window.addEventListener("keyup", (e: KeyboardEvent) => {
     state.keys[e.code] = false;
   });
