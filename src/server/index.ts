@@ -209,6 +209,8 @@ setInterval(() => {
           until: now + STUN_DURATION,
           immuneUntil: now + STUN_DURATION + STUN_IMMUNITY,
         };
+        scores[playerId] = (scores[playerId] || 0) > 0 ? (scores[playerId] || 0) - 1 : 0; // Deduct score on hit
+
         io.emit("player-stunned", {
           playerId,
           until: now + STUN_DURATION,
